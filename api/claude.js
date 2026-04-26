@@ -1,17 +1,10 @@
-export const config = { runtime: 'edge' }
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: { message: 'Method not allowed' } }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' }
-    })
+    return res.status(405).json({ error: { message: 'Method not allowed' } })
   }
 
   try {
-    const body = await req.json()
-
-    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -19,35 +12,16 @@ export default async function handler(req) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: body.model || 'claude-sonnet-4-5',
-        max_tokens: body.max_tokens || 4000,
-        system: body.system,
-        messages: body.messages,
+        model: req.body.model || 'claude-sonnet-4-5',
+        max_tokens: req.body.max_tokens || 4000,
+        system: req.body.system,
+        messages: req.body.messages,
       }),
     })
 
-    const responseText = await anthropicResponse.text()
-    
-    try {
-      const json = JSON.parse(responseText)
-      return new Response(JSON.stringify(json), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    } catch {
-      return new Response(JSON.stringify({ 
-        error: { message: responseText } 
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    }
+    const data = await response.json()
+    return res.status(200).json(data)
   } catch (err) {
-    return new Response(JSON.stringify({ 
-      error: { message: err.message } 
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    })
+    return res.status(500).json({ error: { message: err.message } })
   }
 }
