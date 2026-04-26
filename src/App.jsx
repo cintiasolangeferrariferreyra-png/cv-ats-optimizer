@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState } from "react";
 
 const ACCENT = "#E8171F";
 const GOLD = "#C9A84C";
@@ -6,121 +6,55 @@ const DARK = "#1A1A1A";
 const CREAM = "#F5F0E8";
 const EU_BLUE = "#003399";
 
-async function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result.split(",")[1]);
-    r.onerror = () => reject(new Error("No se pudo leer el archivo"));
-    r.readAsDataURL(file);
-  });
-}
-
-async function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(new Error("No se pudo leer el archivo"));
-    r.readAsText(file, "UTF-8");
-  });
-}
-
-function isPDF(file) {
-  return file?.type === "application/pdf" || file?.name?.endsWith(".pdf");
-}
-
 export default function App() {
-  const [cvFile, setCvFile] = useState(null);
+  const [cvText, setCvText] = useState("");
   const [ofertaText, setOfertaText] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [step, setStep] = useState("upload");
-  const [progress, setProgress] = useState("");
-  const cvInputRef = useRef();
-
-  const handleCvDrop = useCallback((e) => {
-    e.preventDefault();
-    const file = e.dataTransfer?.files?.[0] || e.target?.files?.[0];
-    if (file) setCvFile(file);
-  }, []);
+  const [step, setStep] = useState("form");
 
   const analyze = async () => {
-    if (!cvFile || !ofertaText.trim()) {
-      setError("Por favor subí tu CV y pegá la oferta laboral.");
+    if (!cvText.trim() || !ofertaText.trim()) {
+      setError("Por favor completá los dos campos.");
       return;
     }
     setError(null);
     setLoading(true);
     setResult(null);
-    setProgress("Leyendo tu CV...");
 
     try {
-      let cvContent = [];
-
-      if (isPDF(cvFile)) {
-        const base64Data = await readFileAsBase64(cvFile);
-        cvContent = [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Data } },
-          { type: "text", text: "Este es el CV del usuario." },
-        ];
-      } else {
-        const text = await readFileAsText(cvFile);
-        cvContent = [{ type: "text", text: `CV DEL USUARIO:\n\n${text}` }];
-      }
-
-      setProgress("Analizando y optimizando para ATS...");
-
-      const systemPrompt = `Eres un experto en recursos humanos europeo especializado en:
-1. Formato Europass (estándar de la Unión Europea)
-2. Optimización ATS (Applicant Tracking Systems)
-3. Redacción de CVs en español para el mercado laboral español y europeo
-
-Tu tarea: analizar el CV del usuario y la oferta de trabajo, y devolver un CV completamente optimizado.
-
-REGLAS:
-- Seguir el formato Europass de la UE
-- Incorporar las palabras clave exactas de la oferta laboral
-- Usar verbos de acción fuertes (gestioné, lideré, implementé, reduje, incrementé...)
-- Cuantificar logros siempre que sea posible
-- NO inventar información — solo reorganizar y reformular
-- Español de España (mercado europeo)
-- Secciones Europass: Datos personales, Experiencia profesional, Educación y formación, Competencias digitales, Idiomas, Información adicional
-- Idiomas: Marco Común Europeo (A1-C2)
-- Formato limpio sin tablas ni columnas (los ATS no las leen bien)
-
-ESTRUCTURA DE RESPUESTA:
-Devuelve SOLO el CV optimizado en texto plano.
-Al final agrega "═══ ANÁLISIS ATS ═══" con:
-- Palabras clave detectadas e incorporadas
-- Puntuación ATS estimada (antes y después)
-- 3 recomendaciones personalizadas`;
-
       const response = await fetch("/api/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-5",
           max_tokens: 4000,
-          system: systemPrompt,
+          system: `Eres un experto en recursos humanos europeo especializado en formato Europass y optimización ATS. 
+Tu tarea: analizar el CV del usuario y la oferta de trabajo, y devolver un CV completamente optimizado.
+REGLAS:
+- Seguir el formato Europass de la UE
+- Incorporar las palabras clave exactas de la oferta laboral
+- Usar verbos de acción fuertes (gestioné, lideré, implementé, reduje, incrementé...)
+- Cuantificar logros siempre que sea posible
+- NO inventar información — solo reorganizar y reformular
+- Español de España
+- Secciones: Datos personales, Experiencia profesional, Educación y formación, Competencias digitales, Idiomas, Información adicional
+- Idiomas: Marco Común Europeo (A1-C2)
+- Formato limpio sin tablas ni columnas
+Al final agrega "═══ ANÁLISIS ATS ═══" con palabras clave incorporadas, puntuación ATS antes/después, y 3 recomendaciones.`,
           messages: [
             {
               role: "user",
-              content: [
-                ...cvContent,
-                {
-                  type: "text",
-                  text: `OFERTA LABORAL:\n\n${ofertaText}\n\nOptimizá mi CV para esta oferta, siguiendo el formato Europass y maximizando la puntuación ATS.`,
-                },
-              ],
+              content: `MI CV ACTUAL:\n\n${cvText}\n\nOFERTA LABORAL:\n\n${ofertaText}\n\nOptimizá mi CV para esta oferta siguiendo el formato Europass y maximizando la puntuación ATS.`,
             },
           ],
         }),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || "Error al procesar");
-
+      if (data.error) throw new Error(data.error.message || "Error al procesar");
       const text = data.content?.map((b) => b.text || "").join("") || "";
       setResult(text);
       setStep("result");
@@ -128,7 +62,6 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
       setError(err.message || "Ocurrió un error. Intentá de nuevo.");
     } finally {
       setLoading(false);
-      setProgress("");
     }
   };
 
@@ -139,8 +72,8 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
   };
 
   const handleReset = () => {
-    setStep("upload"); setResult(null);
-    setCvFile(null); setOfertaText(""); setError(null);
+    setStep("form"); setResult(null);
+    setCvText(""); setOfertaText(""); setError(null);
   };
 
   const splitResult = (text) => {
@@ -156,22 +89,21 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
         <span style={s.euStars}>★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★</span>
         <span style={s.euLabel}>UNIÓN EUROPEA · FORMATO EUROPASS · OPTIMIZACIÓN ATS</span>
       </div>
-
       <header style={s.header}>
         <div style={s.headerInner}>
           <div style={s.redTag}>Herramienta gratuita</div>
           <h1 style={s.h1}>Tu CV optimizado para<br /><span style={{ color: GOLD }}>filtros ATS</span> y formato europeo</h1>
-          <p style={s.headerSub}>Subí tu CV y la oferta laboral. La IA lo reescribe en formato Europass y lo optimiza para pasar los sistemas automáticos de selección.</p>
+          <p style={s.headerSub}>Pegá tu CV y la oferta laboral. La IA lo reescribe en formato Europass y lo optimiza para pasar los sistemas automáticos de selección.</p>
         </div>
         <div style={s.headerDeco} />
       </header>
 
       <main style={s.main}>
-        {step === "upload" && (
+        {step === "form" && (
           <>
             <div style={s.stepsRow}>
               {[
-                { n: "1", title: "Subí tu CV", desc: "PDF o texto (.txt)" },
+                { n: "1", title: "Pegá tu CV", desc: "Copiá el texto de tu CV actual" },
                 { n: "2", title: "Pegá la oferta", desc: "La descripción del puesto" },
                 { n: "3", title: "Obtené tu CV ATS", desc: "Listo para postularte" },
               ].map((st) => (
@@ -185,50 +117,29 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
               ))}
             </div>
 
-            <div style={s.sectionLabel}><span>TU CV ACTUAL</span><div style={s.labelLine} /></div>
-
-            <div
-              style={{ ...s.dropZone, borderColor: cvFile ? ACCENT : "#D9D2C5", background: cvFile ? "#FFF5F5" : "#fff" }}
-              onClick={() => cvInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleCvDrop}
-            >
-              <input ref={cvInputRef} type="file" accept=".pdf,.txt,.doc,.docx" style={{ display: "none" }} onChange={handleCvDrop} />
-              {cvFile ? (
-                <div style={s.fileChosen}>
-                  <span style={{ fontSize: 32 }}>📄</span>
-                  <div>
-                    <div style={s.fileName}>{cvFile.name}</div>
-                    <div style={s.fileSize}>{(cvFile.size / 1024).toFixed(0)} KB · Listo</div>
-                  </div>
-                  <button style={s.removeBtn} onClick={(e) => { e.stopPropagation(); setCvFile(null); }}>✕</button>
-                </div>
-              ) : (
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 32, color: "#8A8A8A", marginBottom: 10 }}>⬆</div>
-                  <div style={s.dropTitle}>Arrastrá tu CV aquí o hacé click</div>
-                  <div style={s.dropSub}>PDF, TXT, DOC — máx. 5 MB</div>
-                </div>
-              )}
+            <div style={s.infoBox}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
+              <span style={s.infoText}>
+                <strong>¿Cómo copio el texto de mi CV?</strong> Abrí tu CV en Word o PDF, seleccioná todo (Ctrl+A), copiá (Ctrl+C) y pegalo abajo.
+              </span>
             </div>
 
-            <div style={{ ...s.sectionLabel, marginTop: 28 }}><span>OFERTA LABORAL</span><div style={s.labelLine} /></div>
+            <div style={s.sectionLabel}><span>TU CV ACTUAL</span><div style={s.labelLine} /></div>
+            <textarea style={s.textarea} placeholder="Pegá aquí el texto completo de tu CV actual..." value={cvText} onChange={(e) => setCvText(e.target.value)} rows={10} />
+            <div style={s.charCount}>{cvText.length} caracteres</div>
 
-            <textarea
-              style={s.textarea}
-              placeholder="Pegá aquí la descripción completa del puesto al que querés postularte..."
-              value={ofertaText}
-              onChange={(e) => setOfertaText(e.target.value)}
-              rows={9}
-            />
+            <div style={{ ...s.sectionLabel, marginTop: 8 }}><span>OFERTA LABORAL</span><div style={s.labelLine} /></div>
+            <textarea style={s.textarea} placeholder="Pegá aquí la descripción completa del puesto al que te postulás..." value={ofertaText} onChange={(e) => setOfertaText(e.target.value)} rows={9} />
             <div style={s.charCount}>{ofertaText.length} caracteres</div>
 
             {error && <div style={s.errorBox}>{error}</div>}
 
-            <button style={{ ...s.analyzeBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }} onClick={analyze} disabled={loading}>
-              {loading
-                ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><Spinner />{progress}</span>
-                : "✦ Optimizar mi CV para ATS"}
+            <button
+              style={{ ...s.analyzeBtn, opacity: loading || (!cvText.trim() || !ofertaText.trim()) ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              onClick={analyze}
+              disabled={loading || !cvText.trim() || !ofertaText.trim()}
+            >
+              {loading ? "⏳ Optimizando tu CV..." : "✦ Optimizar mi CV para ATS"}
             </button>
             <div style={s.disclaimer}>🔒 Tu información se procesa en el momento y no se almacena.</div>
           </>
@@ -271,24 +182,11 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
                 </div>
               )}
 
-              <div style={s.tipsRow}>
-                {[
-                  { icon: "📎", tip: "Guardá el CV en .docx o .pdf sin columnas para mejor lectura ATS" },
-                  { icon: "🔑", tip: "Usá exactamente las palabras de la oferta, los ATS buscan coincidencias exactas" },
-                  { icon: "📐", tip: "El formato Europass es reconocido en todos los países de la UE y el EEE" },
-                ].map((t, i) => (
-                  <div key={i} style={s.tipCard}>
-                    <span style={{ fontSize: 16, flexShrink: 0 }}>{t.icon}</span>
-                    <span style={s.tipText}>{t.tip}</span>
-                  </div>
-                ))}
-              </div>
-
               <div style={s.cintiaBox}>
                 <div style={s.cintiaInner}>
                   <div>
                     <div style={s.cintiaTitle}>¿Necesitás también regularizar tu situación en España?</div>
-                    <div style={s.cintiaSub}>Cintia Ferreyra — Abogada especialista en extranjería para latinos en España. Tramitá tu residencia con acompañamiento real.</div>
+                    <div style={s.cintiaSub}>Cintia Ferreyra — Abogada especialista en extranjería para latinos en España.</div>
                   </div>
                   <a href="https://cintiaferreyra.com" target="_blank" rel="noopener noreferrer" style={s.cintiaBtn}>Ver servicios →</a>
                 </div>
@@ -300,23 +198,6 @@ Al final agrega "═══ ANÁLISIS ATS ═══" con:
     </div>
   );
 }
-
-function Spinner() {
-  return (
-    <span style={{
-      width: 16, height: 16,
-      border: "2px solid rgba(255,255,255,0.3)",
-      borderTop: "2px solid #fff",
-      borderRadius: "50%",
-      display: "inline-block",
-      animation: "spin 0.8s linear infinite",
-    }} />
-  );
-}
-
-const styleEl = document.createElement("style");
-styleEl.textContent = `@keyframes spin { to { transform: rotate(360deg); } } * { box-sizing: border-box; margin: 0; padding: 0; }`;
-document.head.appendChild(styleEl);
 
 const s = {
   root: { minHeight: "100vh", background: CREAM, fontFamily: "Georgia, serif" },
@@ -330,22 +211,17 @@ const s = {
   h1: { fontSize: "clamp(26px, 4vw, 40px)", fontWeight: 900, lineHeight: 1.15, marginBottom: 14 },
   headerSub: { color: "#AAAA9A", fontSize: 14, lineHeight: 1.7, fontFamily: "sans-serif", maxWidth: 520 },
   main: { maxWidth: 820, margin: "0 auto", padding: "36px 20px 60px" },
-  stepsRow: { display: "flex", gap: 12, marginBottom: 32, flexWrap: "wrap" },
+  stepsRow: { display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" },
   stepCard: { flex: "1 1 180px", background: "#fff", border: "1px solid #D9D2C5", borderRadius: 4, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 },
   stepNum: { background: DARK, color: CREAM, fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 18, width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   stepTitle: { fontFamily: "sans-serif", fontSize: 13, fontWeight: 700, color: DARK, marginBottom: 2 },
   stepDesc: { fontFamily: "sans-serif", fontSize: 11, color: "#8A8A8A" },
-  sectionLabel: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12, fontFamily: "sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase", color: "#8A8A8A" },
+  infoBox: { background: "#fff", border: "1px solid #D9D2C5", borderLeft: `4px solid ${GOLD}`, borderRadius: 4, padding: "14px 18px", marginBottom: 24, display: "flex", gap: 12, alignItems: "flex-start" },
+  infoText: { fontFamily: "sans-serif", fontSize: 13, color: "#3D3D3D", lineHeight: 1.6 },
+  sectionLabel: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10, fontFamily: "sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase", color: "#8A8A8A" },
   labelLine: { flex: 1, height: 1, background: "#D9D2C5" },
-  dropZone: { border: "2px dashed", borderRadius: 6, padding: 32, cursor: "pointer", transition: "all 0.2s", minHeight: 130, display: "flex", alignItems: "center", justifyContent: "center" },
-  dropTitle: { fontFamily: "sans-serif", fontSize: 15, fontWeight: 600, color: DARK, marginBottom: 4 },
-  dropSub: { fontFamily: "sans-serif", fontSize: 12, color: "#8A8A8A" },
-  fileChosen: { display: "flex", alignItems: "center", gap: 16, width: "100%" },
-  fileName: { fontFamily: "sans-serif", fontSize: 14, fontWeight: 600, color: DARK },
-  fileSize: { fontFamily: "sans-serif", fontSize: 12, color: "#1c8c50", marginTop: 2 },
-  removeBtn: { marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#8A8A8A", padding: 4 },
   textarea: { width: "100%", border: "1px solid #D9D2C5", borderRadius: 4, padding: "16px 18px", fontSize: 13, fontFamily: "sans-serif", lineHeight: 1.7, color: DARK, background: "#fff", resize: "vertical", outline: "none" },
-  charCount: { fontFamily: "sans-serif", fontSize: 11, color: "#8A8A8A", textAlign: "right", marginTop: 4, marginBottom: 24 },
+  charCount: { fontFamily: "sans-serif", fontSize: 11, color: "#8A8A8A", textAlign: "right", marginTop: 4, marginBottom: 20 },
   errorBox: { background: "#FFF0F0", border: "1px solid #F5BABA", borderLeft: `4px solid ${ACCENT}`, borderRadius: 4, padding: "12px 16px", fontFamily: "sans-serif", fontSize: 13, color: "#8B1A1A", marginBottom: 20 },
   analyzeBtn: { width: "100%", background: ACCENT, color: "#fff", border: "none", borderRadius: 4, padding: "18px 24px", fontSize: 15, fontWeight: 700, fontFamily: "sans-serif", letterSpacing: 0.5, transition: "opacity 0.2s" },
   disclaimer: { fontFamily: "sans-serif", fontSize: 11, color: "#8A8A8A", textAlign: "center", marginTop: 14 },
@@ -362,9 +238,6 @@ const s = {
   analysisCard: { background: "#fff", border: "1px solid #D9D2C5", borderLeft: `4px solid ${GOLD}`, borderRadius: 4, padding: 24, marginBottom: 20 },
   analysisTitle: { fontFamily: "sans-serif", fontSize: 14, fontWeight: 700, color: DARK },
   analysisText: { fontFamily: "sans-serif", fontSize: 13, color: "#3D3D3D", lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" },
-  tipsRow: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 },
-  tipCard: { flex: "1 1 200px", background: "#fff", border: "1px solid #D9D2C5", borderRadius: 4, padding: "14px 16px", display: "flex", gap: 10, alignItems: "flex-start" },
-  tipText: { fontFamily: "sans-serif", fontSize: 12, color: "#555", lineHeight: 1.5 },
   cintiaBox: { background: DARK, borderRadius: 6, padding: "24px 28px", color: CREAM },
   cintiaInner: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 },
   cintiaTitle: { fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, marginBottom: 6 },
