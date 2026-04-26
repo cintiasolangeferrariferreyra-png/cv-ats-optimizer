@@ -2,7 +2,10 @@ export const config = { runtime: 'edge' }
 
 export default async function handler(req) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return new Response(JSON.stringify({ error: { message: 'Method not allowed' } }), { 
+      status: 405,
+      headers: { 'Content-Type': 'application/json' }
+    })
   }
 
   try {
@@ -14,15 +17,19 @@ export default async function handler(req) {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'pdfs-2024-09-25',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        model: body.model,
+        max_tokens: body.max_tokens,
+        system: body.system,
+        messages: body.messages,
+      }),
     })
 
-    const text = await response.text()
+    const json = await response.json()
 
-    return new Response(text, {
-      status: response.status,
+    return new Response(JSON.stringify(json), {
+      status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (err) {
